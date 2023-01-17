@@ -1,0 +1,73 @@
+name: Java CI Maven
+on:
+  push:
+    branches-ignore:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checking out
+        uses: actions/checkout@v2
+        with:
+          # Disabling shallow clone is recommended for improving relevancy of reporting
+          fetch-depth: 0
+
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.7.0
+        with:
+          mongodb-version: '5.0'
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v2
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+          cache: maven
+          
+      - name: Checkstyle
+        run: mvn checkstyle::check
+
+      - name: Compile with Maven
+        run: mvn compile
+
+      - name: Unit tests
+        run: mvn test -Dtest=glo2003/unit/*
+        env:
+          MONGO_CONNECTION: ${{secrets.MONGO_LOCAL}}
+          MODE: DEV
+
+      - name: System tests
+        run: mvn test -Dtest=glo2003/e2e/*
+        env:
+          MONGO_CONNECTION: ${{secrets.MONGO_LOCAL}}
+          MODE: DEV
+
+      - name: Code Coverage
+        run: mvn jacoco:report
+          
+      - name: Code Quality Analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          sonar.branch.name: origin/dev
+          sonar.branch.target: origin/dev
+        run: mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=bonne_question -Pcoverage
+        
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/maven@master
+        continue-on-error: true # To make sure that SARIF upload gets called
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
